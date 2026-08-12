@@ -516,3 +516,104 @@ function avisarInstalar() {
   };
   document.querySelector('.appbar').insertAdjacentElement('afterend', bar);
 }
+
+// ══ Tareas (checklists por tienda) ══
+
+async function getTareas(store) {
+  const snap = await db.collection('Tareas').where('store','==',store).get();
+  return snap.docs.map(d => ({ id:d.id, ...d.data() }))
+    .sort((a,b) => String(a.titulo||'').localeCompare(String(b.titulo||'')));
+}
+
+function tareaAplicaHoy(t) {
+  const dow = new Date().getDay();
+  return !Array.isArray(t.dias) || !t.dias.length || t.dias.includes(dow);
+}
+
+async function getHechosDe(date, store) {
+  const snap = await db.collection('TareasHechas')
+    .where('date','==',date).where('store','==',store).get();
+  const por = {};
+  snap.docs.forEach(d => { por[d.data().tareaId] = { id:d.id, ...d.data() }; });
+  return por;
+}
+
+async function marcarItem(tareaId, date, store, idx, hecho) {
+  const quien = hecho
+    ? { nombre: ME.name, pid: ME.pid, at: Date.now() }
+    : firebase.firestore.FieldValue.delete();
+  await db.collection('TareasHechas').doc(tareaId + '_' + date).set({
+    tareaId, date, store, hechos: { [idx]: quien }
+  }, { merge:true });
+}
+
+// ══ Cumpleaños y aniversarios ══
+
+function proximosEventos(emps, dias = 30) {
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const out = [];
+  const siguiente = iso => {
+    const [ , m, d ] = String(iso).split('-').map(Number);
+    if (!m || !d) return null;
+    for (let y = hoy.getFullYear(); y <= hoy.getFullYear()+1; y++) {
+      const f = new Date(y, m-1, Math.min(d, new Date(y, m, 0).getDate()));
+      if (f >= hoy) return f;
+    }
+    return null;
+  };
+  emps.filter(e => e.status === 'active').forEach(e => {
+    [['cumple', e.birthday], ['aniversario', e.hireDate]].forEach(([tipo, iso]) => {
+      if (!iso) return;
+      const f = siguiente(iso);
+      if (!f) return;
+      const en = Math.round((f - hoy) / 86400000);
+      if (en > dias) return;
+      const anos = f.getFullYear() - Number(String(iso).slice(0,4));
+      if (tipo === 'aniversario' && anos < 1) return;
+      out.push({ emp:e, tipo, fecha: toDateStr(f), en, anos });
+    });
+  });
+  return out.sort((a,b) => a.en - b.en);
+}
+
+// ══ Reportes de incidentes ══
+
+async function getReportes() {
+  const snap = await db.collection('Reportes').get();
+  return snap.docs.map(d => ({ id:d.id, ...d.data() }))
+    .sort((a,b) => (b.createdAt?.toMillis?.()||0) - (a.createdAt?.toMillis?.()||0));
+}
+
+async function crearReporte({ texto, store, file }, onProgreso) {
+  let foto = null, w = 0, h = 0;
+  if (file) {
+    if (file.type && !file.type.startsWith('image/')) throw new Error('Sólo se pueden adjuntar imágenes');
+    if (file.size > 12 * 1024 * 1024) throw new Error('La imagen es demasiado grande');
+    if (onProgreso) onProgreso(null);
+    let blob;
+    try { ({ blob, w, h } = await encogerImagen(file)); }
+    catch (e) { console.warn('se sube original:', e); blob = file; }
+    const nombre = `${Date.now()}_${Math.random().toString(36).slice(2,9)}.jpg`;
+    const ref = firebase.storage().ref(`reportes/${nombre}`);
+    const tarea = ref.put(blob, { contentType: blob.type || 'image/jpeg' });
+    await new Promise((ok, fail) => {
+      tarea.on('state_changed',
+        s => { if (onProgreso && s.totalBytes) onProgreso(Math.round(s.bytesTransferred/s.totalBytes*100)); },
+        fail, ok);
+    });
+    foto = await ref.getDownloadURL();
+  }
+  await db.collection('Reportes').add({
+    por: ME.pid, nombre: ME.name, store,
+    texto: String(texto||'').trim(), foto, w, h,
+    date: todayStr(), status: 'nuevo',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function marcarReporteVisto(id) {
+  await db.collection('Reportes').doc(id).update({
+    status: 'revisado', revisadoPor: ME.name,
+    revisadoAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}

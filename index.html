@@ -218,10 +218,15 @@ async function vInicio() {
   try {
     const store = tiendaActiva();
     const hoy = todayStr();
-    const [emps, jobs, abiertos, deHoy, tos, regs] = await Promise.all([
+    const [emps, jobs, abiertos, deHoy, tos, regs, tareas, hechosDia, reps] = await Promise.all([
       getEmployees(), getJobs(), getOpenClockIns(), getClockInsHoy(),
-      getTimeOff(), getRegistros({ store, desde: hoy, hasta: hoy })
+      getTimeOff(), getRegistros({ store, desde: hoy, hasta: hoy }),
+      getTareas(store), getHechosDe(hoy, store), getReportes()
     ]);
+    tareasHoy = tareas.filter(tareaAplicaHoy);
+    hechosHoy = hechosDia;
+    reportes  = reps;
+    empsCache = emps;
 
     const misEmps    = emps.filter(e => e.store === store && e.status === 'active');
     const trabajando = abiertos.filter(c => c.store === store);
@@ -285,8 +290,211 @@ async function vInicio() {
             </div>
             <ion-icon name="chevron-forward-outline" class="chev"></ion-icon>
           </div>`).join('')}
-      </div>` : ''}`;
+      </div>` : ''}
+
+      ${tarjetaTareas()}
+      ${tarjetaReportes(store)}
+      ${tarjetaFestejos(emps)}`;
   } catch (err) { errView(err); }
+}
+
+// ── Tareas de hoy ──
+let tareasHoy = [], hechosHoy = {}, empsCache = [];
+
+function tarjetaTareas() {
+  if (!tareasHoy.length) return '';
+  let total = 0, listos = 0;
+  tareasHoy.forEach(t => {
+    const h = (hechosHoy[t.id] && hechosHoy[t.id].hechos) || {};
+    total += (t.items||[]).length;
+    listos += (t.items||[]).filter((_,i) => h[i]).length;
+  });
+  const pct = total ? Math.round(listos/total*100) : 0;
+  return `
+    <div class="section-t">Tareas de hoy</div>
+    <div class="card row-link" style="padding:14px 15px" onclick="verTareas()">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="kpi-ico ${pct===100?'ico-g':'ico-p'}" style="margin:0"><ion-icon name="checkbox-outline"></ion-icon></div>
+        <div style="flex:1;min-width:0">
+          <div class="row-t">${listos} de ${total} renglones listos</div>
+          <div class="chk-barra" style="margin-top:6px;width:100%"><span style="width:${pct}%"></span></div>
+        </div>
+        <ion-icon name="chevron-forward-outline" class="chev"></ion-icon>
+      </div>
+    </div>`;
+}
+
+function verTareas() {
+  openSheet(`
+    <h3>Tareas de hoy · ${storeShort(tiendaActiva())}</h3>
+    <div id="shTareas">${htmlTareas()}</div>`);
+}
+
+function htmlTareas() {
+  return tareasHoy.map(t => {
+    const h = (hechosHoy[t.id] && hechosHoy[t.id].hechos) || {};
+    const items = t.items || [];
+    const n = items.filter((_,i) => h[i]).length;
+    return `<div class="chk-card ${n===items.length && items.length ? 'lista' : ''}">
+      <div class="chk-head"><strong>${esc(t.titulo)}</strong><em>${n}/${items.length}</em></div>
+      ${items.map((it, i) => {
+        const q = h[i];
+        return `<label class="chk-item ${q ? 'ok' : ''}">
+          <input type="checkbox" ${q?'checked':''} onchange="toggleTarea('${t.id}',${i},this)">
+          <span class="chk-caja"><ion-icon name="checkmark-outline"></ion-icon></span>
+          <span class="chk-texto">${esc(it)}</span>
+          ${q ? `<span class="chk-quien">${esc((q.nombre||'').split(' ')[0])}</span>` : ''}
+        </label>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+async function toggleTarea(tareaId, idx, chk) {
+  chk.disabled = true;
+  try {
+    await marcarItem(tareaId, todayStr(), tiendaActiva(), idx, chk.checked);
+    const doc = hechosHoy[tareaId] || (hechosHoy[tareaId] = { hechos:{} });
+    if (chk.checked) doc.hechos[idx] = { nombre: ME.name, at: Date.now() };
+    else delete doc.hechos[idx];
+    const host = document.getElementById('shTareas');
+    if (host) host.innerHTML = htmlTareas();
+  } catch (err) {
+    chk.checked = !chk.checked; chk.disabled = false;
+    toast('No se pudo guardar: ' + err.message, 'err');
+  }
+}
+
+// ── Reportes de incidentes ──
+let reportes = [];
+
+function tarjetaReportes(store) {
+  const nuevos = reportes.filter(r => r.store === store && (r.status||'nuevo') === 'nuevo');
+  return `
+    <div class="section-t">Reportes</div>
+    <div class="card row-link ${nuevos.length ? 'row-viva' : ''}" style="padding:14px 15px" onclick="verReportes()">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="kpi-ico ${nuevos.length ? 'ico-a' : 'ico-c'}" style="margin:0"><ion-icon name="warning-outline"></ion-icon></div>
+        <div style="flex:1;min-width:0">
+          <div class="row-t">${nuevos.length ? nuevos.length + (nuevos.length===1?' reporte nuevo':' reportes nuevos') : 'Sin reportes nuevos'}</div>
+          <div class="row-s">Incidentes con foto del equipo</div>
+        </div>
+        <ion-icon name="chevron-forward-outline" class="chev"></ion-icon>
+      </div>
+    </div>`;
+}
+
+function verReportes() {
+  const store = tiendaActiva();
+  const lista = reportes.filter(r => r.store === store);
+  openSheet(`
+    <h3>Reportes · ${storeShort(store)}</h3>
+    <button class="btn btn-primary btn-block" onclick="nuevoReporte()" style="margin:10px 0 14px">
+      <ion-icon name="add-outline"></ion-icon> Nuevo reporte</button>
+    <div id="shReps">
+    ${lista.length ? lista.map(r => `
+      <div class="card" style="padding:13px 14px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${avatar(r.nombre||'?', 26)}
+          <strong style="font-size:14px">${esc(r.nombre||'—')}</strong>
+          ${(r.status||'nuevo')==='nuevo' ? '<span class="badge b-red">Nuevo</span>' : '<span class="badge b-green">Revisado</span>'}
+          <span style="margin-left:auto;font-size:11.5px;color:var(--light)">${fDateShort(r.date)}</span>
+        </div>
+        <p style="margin:8px 0 0;font-size:13.5px;line-height:1.5;white-space:pre-wrap">${esc(r.texto||'')}</p>
+        ${r.foto ? `<img src="${r.foto}" alt="Foto" loading="lazy" onclick="verFoto('${r.foto}')"
+          style="margin-top:9px;width:100%;max-width:230px;border-radius:10px;border:1px solid var(--line);aspect-ratio:${(r.w||4)}/${(r.h||3)};object-fit:cover">` : ''}
+        ${(r.status||'nuevo')==='nuevo' ? `
+          <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="revisarRep('${r.id}',this)">
+            <ion-icon name="checkmark-outline"></ion-icon> Marcar revisado</button>` : ''}
+      </div>`).join('')
+    : `<div class="empty"><ion-icon name="shield-checkmark-outline"></ion-icon><p>Sin reportes en esta tienda.</p></div>`}
+    </div>`);
+}
+
+async function revisarRep(id, btn) {
+  btn.disabled = true;
+  try {
+    await marcarReporteVisto(id);
+    const r = reportes.find(x => x.id === id);
+    if (r) { r.status = 'revisado'; r.revisadoPor = ME.name; }
+    verReportes();
+    toast('Reporte marcado como revisado', 'ok');
+  } catch (err) { btn.disabled = false; toast('Error: ' + err.message, 'err'); }
+}
+
+function nuevoReporte() {
+  openSheet(`
+    <h3>Nuevo reporte · ${storeShort(tiendaActiva())}</h3>
+    <p class="lead">Queda guardado y avisa al resto de la gerencia.</p>
+    <div class="field"><label>¿Qué pasó?</label>
+      <textarea id="repTxt" rows="4" placeholder="Describe el incidente..."></textarea></div>
+    <div class="field"><label>Foto (opcional)</label>
+      <input type="file" id="repFile" accept="image/*"></div>
+    <button class="btn btn-primary btn-block" id="repBtn" onclick="enviarReporte()">
+      <ion-icon name="send-outline"></ion-icon> Enviar reporte</button>`);
+}
+
+async function enviarReporte() {
+  const texto = document.getElementById('repTxt').value.trim();
+  if (!texto) { toast('Describe lo que pasó.', 'err'); return; }
+  const file = document.getElementById('repFile').files[0] || null;
+  const btn = document.getElementById('repBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<ion-icon name="sync-outline" class="gira"></ion-icon> Enviando...';
+  try {
+    await crearReporte({ texto, store: tiendaActiva(), file }, pct => {
+      if (pct !== null) btn.innerHTML = `Subiendo foto ${pct}%`;
+    });
+    closeSheet();
+    toast('Reporte guardado', 'ok');
+    vInicio();
+  } catch (err) {
+    btn.disabled = false;
+    btn.innerHTML = '<ion-icon name="send-outline"></ion-icon> Enviar reporte';
+    toast('No se pudo enviar: ' + err.message, 'err');
+  }
+}
+
+// ── Cumpleaños y aniversarios ──
+function tarjetaFestejos(emps) {
+  const evs = proximosEventos(emps, 30);
+  if (!evs.length) return '';
+  return `
+    <div class="section-t">Cumpleaños y aniversarios</div>
+    <div class="card">
+      ${evs.slice(0,5).map((ev, i) => `
+        <div class="row ${ev.en===0 ? 'festejo-hoy' : ''}">
+          ${avatar(ev.emp.name, 34)}
+          <div class="row-main">
+            <div class="row-t">${esc(ev.emp.name)}</div>
+            <div class="row-s">${ev.tipo==='cumple' ? '🎂 Cumpleaños' : '🏅 ' + ev.anos + (ev.anos===1?' año':' años')}
+              · ${ev.en===0 ? '¡Hoy!' : ev.en===1 ? 'Mañana' : 'En ' + ev.en + ' días'}</div>
+          </div>
+          ${ev.en===0 ? `<button class="btn btn-primary btn-sm" onclick="felicitar(${i}, this)">
+            <ion-icon name="megaphone-outline"></ion-icon></button>` : ''}
+        </div>`).join('')}
+    </div>`;
+}
+
+let festejosCache = null;
+async function felicitar(i, btn) {
+  const evs = proximosEventos(empsCache, 30);
+  const ev = evs[i];
+  if (!ev) return;
+  btn.disabled = true;
+  try {
+    await db.collection('Chats').doc(ANUNCIOS)
+      .set({ type:'anuncios', participants:[], names:{} }, { merge:true });
+    const msg = ev.tipo === 'cumple'
+      ? `🎂🎉 ¡Feliz cumpleaños, ${ev.emp.name}! Todo el equipo de El Águila te desea un día increíble. 🥳`
+      : `🏅🎉 ¡Felicidades, ${ev.emp.name}! Hoy cumples ${ev.anos} ${ev.anos===1?'año':'años'} con nosotros en El Águila. ¡Gracias por tu trabajo!`;
+    await sendMessage(ANUNCIOS, msg);
+    toast('Anuncio publicado para todo el equipo', 'ok');
+    btn.innerHTML = '<ion-icon name="checkmark-outline"></ion-icon>';
+  } catch (err) {
+    btn.disabled = false;
+    toast('No se pudo publicar: ' + err.message, 'err');
+  }
 }
 
 // ══════════ Grupo ══════════
