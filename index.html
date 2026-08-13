@@ -157,6 +157,11 @@ function showPerfil() {
   openSheet(`
     <h3>${esc(ME.name)}</h3>
     <p class="lead">${esc(ME.email || '')} · Gerencia</p>
+    <div class="field"><label>Mi nombre — como se ve en el chat y en todo el sistema</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="miNombre" value="${esc(ME.name)}" style="flex:1">
+        <button class="btn btn-primary" id="nomBtn" onclick="guardarMiNombre()">Guardar</button>
+      </div></div>
     <div class="card" style="margin-bottom:12px">
       <div class="row"><div class="row-main"><div class="row-t">Escritorio</div>
         <div class="row-s">Nómina, horario y reportes viven en el software completo.</div></div></div>
@@ -164,6 +169,22 @@ function showPerfil() {
     <button class="btn btn-ghost btn-block" onclick="auth.signOut();closeSheet()">
       <ion-icon name="log-out-outline"></ion-icon> Cerrar sesión
     </button>`);
+}
+
+// El nombre inicial sale del correo; aquí se pone el nombre real.
+async function guardarMiNombre() {
+  const nombre = document.getElementById('miNombre').value.trim();
+  if (!nombre) { toast('El nombre no puede quedar vacío.', 'err'); return; }
+  const btn = document.getElementById('nomBtn');
+  btn.disabled = true;
+  try {
+    await db.collection('Main').doc(ME.uid).update({ name: nombre });
+    await db.collection('UserIndex').doc(ME.uid).set({ name: nombre }, { merge:true });
+    ME.name = nombre;
+    document.getElementById('barAva').innerHTML = avatar(ME.name, 36);
+    closeSheet();
+    toast('Nombre actualizado: ' + nombre, 'ok');
+  } catch (err) { btn.disabled = false; toast('No se pudo cambiar: ' + err.message, 'err'); }
 }
 
 // ══════════ Navegación ══════════
