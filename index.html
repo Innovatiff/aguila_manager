@@ -599,6 +599,15 @@ function paintConvs() {
           <span class="conv-t">${a.lastAt?relTime(a.lastAt):''}</span></div>
         <div class="conv-s">${esc(a.lastMessage || 'Publica novedades para todo el equipo')}</div>
       </div></div>
+    <div class="conv-label">Tiendas</div>
+    ${STORE_IDS.map(t => `
+    <div class="conv" onclick="openTienda('${t}')">
+      <div class="conv-ava tienda" style="background:${STORES[t].color}"><ion-icon name="storefront-outline"></ion-icon></div>
+      <div class="conv-main">
+        <div class="conv-top"><span class="conv-n">Chat de ${storeShort(t)}${punto('tienda_'+t)}</span>
+          <span class="conv-t">${chatMeta['tienda_'+t]?.lastAt?relTime(chatMeta['tienda_'+t].lastAt):''}</span></div>
+        <div class="conv-s">${esc(chatMeta['tienda_'+t]?.lastMessage || 'Toda la tienda, sin mezclar')}</div>
+      </div></div>`).join('')}
     ${grupos.length?`<div class="conv-label">Grupos</div>${grupos.map(filaGrupo).join('')}`:''}
     ${cols.length?`<div class="conv-label">Colaboradores</div>${cols.map(row).join('')}`:''}
     ${mgrs.length?`<div class="conv-label">Gerencia</div>${mgrs.map(row).join('')}`:''}`;
@@ -622,6 +631,13 @@ async function openDm(pid) {
   mountThread();
 }
 
+async function openTienda(t) {
+  await ensureTienda(t);
+  activeChat = { id:'tienda_'+t, type:'tienda',
+                 title:'Chat de ' + storeShort(t), sub:'Toda la tienda' };
+  mountThread();
+}
+
 function openGrupo(id) {
   const c = chatMeta[id];
   if (!c) return;
@@ -640,6 +656,8 @@ function mountThread() {
     ? '<div class="conv-ava anuncios" style="width:38px;height:38px;font-size:14px"><ion-icon name="megaphone-outline"></ion-icon></div>'
     : activeChat.type==='grupo'
     ? '<div class="conv-ava grupo" style="width:38px;height:38px;font-size:14px"><ion-icon name="people-outline"></ion-icon></div>'
+    : activeChat.type==='tienda'
+    ? '<div class="conv-ava tienda" style="width:38px;height:38px;font-size:14px"><ion-icon name="storefront-outline"></ion-icon></div>'
     : avatar(activeChat.title, 38);
   const editBtn = document.getElementById('grpEditBtn');
   if (editBtn) editBtn.style.display = activeChat.type==='grupo' ? '' : 'none';
@@ -779,7 +797,7 @@ function estadoDe(m) {
   const tMs = m.createdAt?.toMillis?.() || 0;
   if (!tMs) return `<div class="msg-estado"><ion-icon name="time-outline"></ion-icon> Enviando…</div>`;
 
-  if (activeChat.type === 'anuncios' || activeChat.type === 'grupo') {
+  if (activeChat.type !== 'dm') {
     const quienes = Object.keys(vistos)
       .filter(p => p !== ME.pid && msDe(vistos[p]) >= tMs);
     return quienes.length
