@@ -268,9 +268,12 @@ const dmId = (a,b) => 'dm_' + [a,b].sort().join('__');
 
 async function ensureDm(otherPid, names) {
   const id = dmId(ME.pid, otherPid);
-  await db.collection('Chats').doc(id).set({
-    type:'dm', participants:[ME.pid, otherPid], names:names||{}
-  }, { merge:true });
+  const ref = db.collection('Chats').doc(id);
+  // Leer primero: más rápido, y no pisa el orden de participantes que
+  // haya dejado quien creó la conversación.
+  const doc = await ref.get();
+  if (doc.exists) return id;
+  await ref.set({ type:'dm', participants:[ME.pid, otherPid].sort(), names:names||{} });
   return id;
 }
 
@@ -312,9 +315,10 @@ function listenChats(cb) {
 // Canal fijo de cada tienda; las reglas sólo dejan entrar a su gente.
 async function ensureTienda(t) {
   const id = 'tienda_' + t;
-  await db.collection('Chats').doc(id).set({
-    type:'tienda', store: t, title: 'Chat de ' + storeShort(t)
-  }, { merge:true });
+  const ref = db.collection('Chats').doc(id);
+  const doc = await ref.get();          // leer es más barato que escribir
+  if (doc.exists) return id;
+  await ref.set({ type:'tienda', store: t, title: 'Chat de ' + storeShort(t) });
   return id;
 }
 

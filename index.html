@@ -620,9 +620,10 @@ function paintConvs() {
 
 async function openAnuncios() {
   const t = tiendaActiva();
-  await db.collection('Chats').doc(anunciosId(t)).set({
-    type:'anuncios', store: t, title: 'Anuncios de ' + storeShort(t)
-  }, { merge:true });
+  const ref = db.collection('Chats').doc(anunciosId(t));
+  const doc = await ref.get();
+  if (!doc.exists) await ref.set({
+    type:'anuncios', store: t, title: 'Anuncios de ' + storeShort(t) });
   // La gerencia SÍ publica en anuncios
   activeChat = { id:anunciosId(t), type:'anuncios',
                  title:'Anuncios de ' + storeShort(t),
@@ -633,10 +634,15 @@ async function openAnuncios() {
 async function openDm(pid) {
   const p = people.find(x=>x.pid===pid);
   if (!p) return;
-  const names = {}; names[ME.pid]=ME.name; names[p.pid]=p.name;
-  const id = await ensureDm(p.pid, names);
-  activeChat = { id, type:'dm', title:p.name, sub:p.sub+' · Conversación privada' };
-  mountThread();
+  try {
+    const names = {}; names[ME.pid]=ME.name; names[p.pid]=p.name;
+    const id = await ensureDm(p.pid, names);
+    activeChat = { id, type:'dm', title:p.name, sub:p.sub+' · Conversación privada' };
+    mountThread();
+  } catch (err) {
+    console.error('openDm', err);
+    toast('No se pudo abrir la conversación: ' + err.message, 'err');
+  }
 }
 
 async function openTienda(t) {
