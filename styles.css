@@ -892,3 +892,7 @@ ion-icon {
 .grp-miembro input { width:17px; height:17px; accent-color:var(--primary); }
 .grp-nombre { font-size:14px; font-weight:600; }
 .grp-sub { margin-left:auto; font-size:11.5px; color:var(--muted); }
+
+/* Al repintar un chat abierto no se re-anima cada burbuja (se sentía como lag) */
+.msgs.sin-anim .bub-row,
+.msgs.sin-anim .anuncio { animation: none; }
