@@ -554,7 +554,7 @@ async function vGrupo() {
       mgrs.docs.forEach(d => { const m = d.data();
         people.push({ pid:'mgr:'+d.id, name:m.name||m.email||'Gerencia', sub:'Gerencia', kind:'m' }); });
       emps.forEach(e => {
-        if (e.status === 'active') people.push({ pid:'emp:'+e.id, name:e.name, sub:storeShort(e.store), kind:'c' }); });
+        if (e.status === 'active') people.push({ pid:'emp:'+e.id, name:e.name, sub:storeShort(e.store), kind:'c', store:e.store }); });
       people = people.filter(p => p.pid !== ME.pid);
     }
     paintConvs();
@@ -563,10 +563,12 @@ async function vGrupo() {
 }
 
 function paintConvs() {
+  const tiendaAct = tiendaActiva();
   const a = chatMeta[ANUNCIOS] || {};
   const pend = {}; sinLeer(Object.values(chatMeta)).forEach(c => pend[c.id] = true);
   const punto = id => pend[id] ? '<span class="conv-dot"></span>' : '';
-  const mgrs = people.filter(p=>p.kind==='m'), cols = people.filter(p=>p.kind==='c');
+  const mgrs = people.filter(p=>p.kind==='m');
+  const cols = people.filter(p=>p.kind==='c' && p.store === tiendaAct);
   const row = p => {
     const m = chatMeta[dmId(ME.pid,p.pid)] || {};
     return `<div class="conv" onclick="openDm('${p.pid}')">
@@ -578,6 +580,7 @@ function paintConvs() {
       </div></div>`;
   };
   const grupos = Object.values(chatMeta).filter(c => c.type === 'grupo')
+    .filter(c => !c.store || c.store === tiendaAct)
     .sort((x,y) => String(x.title||'').localeCompare(String(y.title||'')));
   const filaGrupo = c => `
     <div class="conv" onclick="openGrupo('${c.id}')">
@@ -589,6 +592,7 @@ function paintConvs() {
       </div></div>`;
 
   el().innerHTML = `
+    ${chipsTienda('paintConvs()')}
     <button class="btn btn-ghost btn-block" onclick="abrirGrupo()" style="margin-bottom:12px">
       <ion-icon name="people-outline"></ion-icon> Crear un grupo
     </button>
@@ -600,7 +604,7 @@ function paintConvs() {
         <div class="conv-s">${esc(a.lastMessage || 'Publica novedades para todo el equipo')}</div>
       </div></div>
     <div class="conv-label">Tiendas</div>
-    ${STORE_IDS.map(t => `
+    ${[tiendaAct].map(t => `
     <div class="conv" onclick="openTienda('${t}')">
       <div class="conv-ava tienda" style="background:${STORES[t].color}"><ion-icon name="storefront-outline"></ion-icon></div>
       <div class="conv-main">
@@ -1130,6 +1134,8 @@ async function denegar(id) {
 function abrirGrupo(id) {
   const c = id ? chatMeta[id] : null;
   const dentro = new Set(c ? (c.participants || []) : []);
+  const st = (c && c.store) || tiendaActiva();
+  const elegibles = people.filter(p => p.kind === 'm' || p.store === st);
   openSheet(`
     <h3>${c ? 'Editar grupo' : 'Nuevo grupo'}</h3>
     <p class="lead">Tú siempre quedas incluida.</p>
@@ -1137,7 +1143,7 @@ function abrirGrupo(id) {
       <input type="text" id="grpNombre" value="${c ? esc(c.title||'') : ''}" placeholder="Equipo Cocina, Encargados..."></div>
     <div class="field"><label>Miembros</label>
       <div class="grp-lista" id="grpMiembros">
-        ${people.map(p => `
+        ${elegibles.map(p => `
           <label class="grp-miembro">
             <input type="checkbox" value="${p.pid}" ${dentro.has(p.pid) ? 'checked' : ''}>
             ${avatar(p.name, 26)}
@@ -1166,7 +1172,9 @@ async function guardarGrupo(id) {
   try {
     const docId = id || 'grp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     await db.collection('Chats').doc(docId).set({
-      type:'grupo', title: nombre, participants, names, createdBy: ME.pid
+      type:'grupo', title: nombre, participants, names,
+      store: (id && (chatMeta[id]||{}).store) || tiendaActiva(),
+      createdBy: ME.pid
     }, { merge:true });
     closeSheet();
     toast(`Grupo "${nombre}" · ${participants.length} miembros`, 'ok');

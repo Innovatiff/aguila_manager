@@ -294,15 +294,32 @@ function listenMessages(chatId, cb) {
 }
 
 function listenChats(cb) {
-  const st = { mine:[], anuncios:null };
-  const emit = () => cb(st.anuncios ? st.mine.concat([st.anuncios]) : st.mine);
+  const st = { mine:[], anuncios:null, tiendas:{} };
+  const emit = () => cb(st.mine
+    .concat(st.anuncios ? [st.anuncios] : [])
+    .concat(Object.values(st.tiendas)));
   const a = db.collection('Chats').where('participants','array-contains',ME.pid)
     .onSnapshot(s => { st.mine = s.docs.map(d=>({id:d.id,...d.data()})); emit(); },
                 e => console.error('chats mine', e));
   const b = db.collection('Chats').doc(ANUNCIOS)
     .onSnapshot(d => { st.anuncios = d.exists ? {id:d.id,...d.data()} : null; emit(); },
                 e => console.error('chats anuncios', e));
-  return () => { a(); b(); };
+  // Los canales de las dos tiendas (la gerencia está en ambos)
+  const c = STORE_IDS.map(t =>
+    db.collection('Chats').doc('tienda_' + t).onSnapshot(d => {
+      if (d.exists) st.tiendas[d.id] = { id:d.id, ...d.data() };
+      emit();
+    }, e => console.error('chats tienda', e)));
+  return () => { a(); b(); c.forEach(u => u()); };
+}
+
+// Canal fijo de cada tienda; las reglas sólo dejan entrar a su gente.
+async function ensureTienda(t) {
+  const id = 'tienda_' + t;
+  await db.collection('Chats').doc(id).set({
+    type:'tienda', store: t, title: 'Chat de ' + storeShort(t)
+  }, { merge:true });
+  return id;
 }
 
 // ── Fotos en el chat ──
