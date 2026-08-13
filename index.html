@@ -485,12 +485,13 @@ async function felicitar(i, btn) {
   if (!ev) return;
   btn.disabled = true;
   try {
-    await db.collection('Chats').doc(ANUNCIOS)
-      .set({ type:'anuncios', participants:[], names:{} }, { merge:true });
+    await db.collection('Chats').doc(anunciosId(ev.emp.store)).set({
+      type:'anuncios', store: ev.emp.store,
+      title: 'Anuncios de ' + storeShort(ev.emp.store) }, { merge:true });
     const msg = ev.tipo === 'cumple'
       ? `🎂🎉 ¡Feliz cumpleaños, ${ev.emp.name}! Todo el equipo de El Águila te desea un día increíble. 🥳`
       : `🏅🎉 ¡Felicidades, ${ev.emp.name}! Hoy cumples ${ev.anos} ${ev.anos===1?'año':'años'} con nosotros en El Águila. ¡Gracias por tu trabajo!`;
-    await sendMessage(ANUNCIOS, msg);
+    await sendMessage(anunciosId(ev.emp.store), msg);
     toast('Anuncio publicado para todo el equipo', 'ok');
     btn.innerHTML = '<ion-icon name="checkmark-outline"></ion-icon>';
   } catch (err) {
@@ -536,7 +537,7 @@ function pintarAvisos() {
   if (tab) tab.classList.toggle('nuevo', nuevos.length > 0);
   if (nuevos.length > avisosAntes && TAB !== 'grupo') {
     const c = nuevos[0];
-    const quien = c.id === ANUNCIOS ? 'Anuncios Generales'
+    const quien = String(c.id).startsWith('anuncios') ? (c.title || 'Anuncios')
       : ((c.names && c.names[c.lastSender]) || 'un colaborador');
     toast('Nuevo mensaje de ' + quien, 'info');
   }
@@ -564,7 +565,7 @@ async function vGrupo() {
 
 function paintConvs() {
   const tiendaAct = tiendaActiva();
-  const a = chatMeta[ANUNCIOS] || {};
+  const a = chatMeta[anunciosId(tiendaAct)] || {};
   const pend = {}; sinLeer(Object.values(chatMeta)).forEach(c => pend[c.id] = true);
   const punto = id => pend[id] ? '<span class="conv-dot"></span>' : '';
   const mgrs = people.filter(p=>p.kind==='m');
@@ -599,7 +600,7 @@ function paintConvs() {
     <div class="conv" onclick="openAnuncios()">
       <div class="conv-ava anuncios"><ion-icon name="megaphone-outline"></ion-icon></div>
       <div class="conv-main">
-        <div class="conv-top"><span class="conv-n">Anuncios Generales${punto(ANUNCIOS)}</span>
+        <div class="conv-top"><span class="conv-n">Anuncios de ${storeShort(tiendaAct)}${punto(anunciosId(tiendaAct))}</span>
           <span class="conv-t">${a.lastAt?relTime(a.lastAt):''}</span></div>
         <div class="conv-s">${esc(a.lastMessage || 'Publica novedades para todo el equipo')}</div>
       </div></div>
@@ -618,11 +619,14 @@ function paintConvs() {
 }
 
 async function openAnuncios() {
-  await db.collection('Chats').doc(ANUNCIOS)
-    .set({ type:'anuncios', participants:[], names:{} }, { merge:true });
+  const t = tiendaActiva();
+  await db.collection('Chats').doc(anunciosId(t)).set({
+    type:'anuncios', store: t, title: 'Anuncios de ' + storeShort(t)
+  }, { merge:true });
   // La gerencia SÍ publica en anuncios
-  activeChat = { id:ANUNCIOS, type:'anuncios', title:'Anuncios Generales',
-                 sub:'Todo el equipo · sólo publica la gerencia' };
+  activeChat = { id:anunciosId(t), type:'anuncios',
+                 title:'Anuncios de ' + storeShort(t),
+                 sub:'Toda la tienda · sólo publica la gerencia' };
   mountThread();
 }
 

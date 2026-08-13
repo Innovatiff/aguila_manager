@@ -262,7 +262,8 @@ async function getPedidos(store) {
 async function updatePedido(id, data) { await db.collection('Pedidos').doc(id).update(data); }
 
 // ── Chat (idéntico al del resto de aplicaciones) ──
-const ANUNCIOS = 'anuncios';
+// Los anuncios son por tienda
+const anunciosId = t => 'anuncios_' + t;
 const dmId = (a,b) => 'dm_' + [a,b].sort().join('__');
 
 async function ensureDm(otherPid, names) {
@@ -294,23 +295,18 @@ function listenMessages(chatId, cb) {
 }
 
 function listenChats(cb) {
-  const st = { mine:[], anuncios:null, tiendas:{} };
-  const emit = () => cb(st.mine
-    .concat(st.anuncios ? [st.anuncios] : [])
-    .concat(Object.values(st.tiendas)));
+  const st = { mine:[], tiendas:{} };
+  const emit = () => cb(st.mine.concat(Object.values(st.tiendas)));
   const a = db.collection('Chats').where('participants','array-contains',ME.pid)
     .onSnapshot(s => { st.mine = s.docs.map(d=>({id:d.id,...d.data()})); emit(); },
                 e => console.error('chats mine', e));
-  const b = db.collection('Chats').doc(ANUNCIOS)
-    .onSnapshot(d => { st.anuncios = d.exists ? {id:d.id,...d.data()} : null; emit(); },
-                e => console.error('chats anuncios', e));
-  // Los canales de las dos tiendas (la gerencia está en ambos)
-  const c = STORE_IDS.map(t =>
-    db.collection('Chats').doc('tienda_' + t).onSnapshot(d => {
+  // Los canales de las dos tiendas —chat y anuncios— (la gerencia está en todos)
+  const c = STORE_IDS.flatMap(t => ['tienda_' + t, anunciosId(t)]).map(id =>
+    db.collection('Chats').doc(id).onSnapshot(d => {
       if (d.exists) st.tiendas[d.id] = { id:d.id, ...d.data() };
       emit();
-    }, e => console.error('chats tienda', e)));
-  return () => { a(); b(); c.forEach(u => u()); };
+    }, e => console.error('chats canal', e)));
+  return () => { a(); c.forEach(u => u()); };
 }
 
 // Canal fijo de cada tienda; las reglas sólo dejan entrar a su gente.
