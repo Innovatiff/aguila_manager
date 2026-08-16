@@ -315,10 +315,14 @@ function listenChats(cb) {
 // Canal fijo de cada tienda; las reglas sólo dejan entrar a su gente.
 async function ensureTienda(t) {
   const id = 'tienda_' + t;
+  const titulo = 'Chat de ' + storeShort(t);
   const ref = db.collection('Chats').doc(id);
   const doc = await ref.get();          // leer es más barato que escribir
-  if (doc.exists) return id;
-  await ref.set({ type:'tienda', store: t, title: 'Chat de ' + storeShort(t) });
+  if (doc.exists) {
+    if (doc.data().title !== titulo) ref.update({ title: titulo }).catch(() => {});
+    return id;
+  }
+  await ref.set({ type:'tienda', store: t, title: titulo });
   return id;
 }
 
@@ -439,9 +443,14 @@ const vistoEscrito = {};   // anti-bucle: escribir dispara el snapshot que
                            // vuelve aquí; sólo se escribe si hay algo nuevo.
 function marcarVisto(chatId, lastAtMs) {
   if (!ME) return;
-  const t = lastAtMs || Date.now();
-  if (vistoEscrito[chatId] && vistoEscrito[chatId] >= t) return;
-  vistoEscrito[chatId] = t;
+  // Un chat sin mensajes no tiene "hora del último mensaje". Antes se
+  // usaba la hora actual como respaldo, que cambia siempre, y el freno
+  // anti-bucle nunca frenaba: dos sesiones mirando un chat vacío se
+  // reescribían el "visto" una a la otra sin parar. Sin último mensaje
+  // no hay nada que ver, así que no se escribe nada.
+  if (!lastAtMs) return;
+  if (vistoEscrito[chatId] && vistoEscrito[chatId] >= lastAtMs) return;
+  vistoEscrito[chatId] = lastAtMs;
   const campo = {}; campo['vistos.' + ME.pid] = firebase.firestore.FieldValue.serverTimestamp();
   db.collection('Chats').doc(chatId).update(campo)
     .catch(e => console.warn('marcarVisto', e));

@@ -643,8 +643,9 @@ async function openAnuncios() {
   const t = tiendaActiva();
   const ref = db.collection('Chats').doc(anunciosId(t));
   const doc = await ref.get();
-  if (!doc.exists) await ref.set({
-    type:'anuncios', store: t, title: 'Anuncios de ' + storeShort(t) });
+  const titulo = 'Anuncios de ' + storeShort(t);
+  if (!doc.exists) await ref.set({ type:'anuncios', store: t, title: titulo });
+  else if (doc.data().title !== titulo) ref.update({ title: titulo }).catch(() => {});
   // La gerencia SÍ publica en anuncios
   activeChat = { id:anunciosId(t), type:'anuncios',
                  title:'Anuncios de ' + storeShort(t),
