@@ -241,12 +241,14 @@ async function vInicio() {
   try {
     const store = tiendaActiva();
     const hoy = todayStr();
-    const [emps, jobs, abiertos, deHoy, tos, regs, tareas, hechosDia, reps] = await Promise.all([
+    const [emps, jobs, abiertos, deHoy, tos, regs, tareas, hechosDia, reps, mdia] = await Promise.all([
       getEmployees(), getJobs(), getOpenClockIns(), getClockInsHoy(),
       getTimeOff(), getRegistros({ store, desde: hoy, hasta: hoy }),
-      getTareas(store), getHechosDe(hoy, store), getReportes()
+      getTareas(store), getHechosDe(hoy, store), getReportes(),
+      getMensajeDia().catch(() => ({ texto: '' }))
     ]);
     tareasHoy = tareas.filter(tareaAplicaHoy);
+    mensajeDia = mdia;
     hechosHoy = hechosDia;
     reportes  = reps;
     empsCache = emps;
@@ -283,6 +285,8 @@ async function vInicio() {
         <div style="font-size:13.5px;color:var(--muted);margin-top:2px">${misEmps.length} colaboradores activos en ${storeShort(tiendaActiva())}</div>
       </div>
 
+      ${tarjetaMensaje()}
+
       ${chipsTienda('vInicio()')}
 
       <div class="kpis">
@@ -316,6 +320,7 @@ async function vInicio() {
       </div>` : ''}
 
       ${tarjetaTareas()}
+      ${tarjetaHorarios()}
       ${tarjetaReportes(store)}
       ${tarjetaFestejos(emps)}`;
   } catch (err) { errView(err); }
@@ -1247,6 +1252,138 @@ function refrescarEstado() {
   if (!nodo) { paintMsgs(msgsCache); estadoFirma = html; return; }
   estadoFirma = html;
   nodo.outerHTML = html;
+}
+// ══ Mensaje del día ══
+let mensajeDia = { texto: '' };
+
+function tarjetaMensaje() {
+  const hay = mensajeDia && mensajeDia.texto;
+  return `
+    <div class="mdia ${hay ? '' : 'vacio'}" onclick="editarMensaje()">
+      <ion-icon name="sparkles-outline" class="mdia-ico"></ion-icon>
+      <div class="mdia-cuerpo">
+        ${hay
+          ? `<div class="mdia-texto">"${esc(mensajeDia.texto)}"</div>
+             <div class="mdia-firma">— ${esc(mensajeDia.por || 'Gerencia')}</div>`
+          : `<div class="mdia-texto">Deja un mensaje bonito para el equipo…</div>
+             <div class="mdia-firma">Lo verán al abrir su portal</div>`}
+      </div>
+      <ion-icon name="create-outline" class="mdia-lapiz"></ion-icon>
+    </div>`;
+}
+
+function editarMensaje() {
+  openSheet(`
+    <h3><ion-icon name="sparkles-outline" style="vertical-align:-2px;color:#d946ef"></ion-icon> Mensaje del día</h3>
+    <p class="lead">Sale arriba del portal de cada colaborador al abrirlo.</p>
+    <div class="field"><label>Tu mensaje</label>
+      <textarea id="mdiaTxt" rows="3" placeholder="¡Feliz día, equipo! Hoy va a ser un gran día 🦅">${esc(mensajeDia.texto || '')}</textarea></div>
+    <button class="btn btn-primary btn-block" id="mdiaBtn" onclick="guardarMensajeDia()">
+      <ion-icon name="checkmark-outline"></ion-icon> Publicar mensaje</button>
+    ${mensajeDia.texto ? `<button class="btn btn-ghost btn-block" style="margin-top:8px"
+      onclick="document.getElementById('mdiaTxt').value='';guardarMensajeDia()">Quitar el mensaje</button>` : ''}`);
+}
+
+async function guardarMensajeDia() {
+  const btn = document.getElementById('mdiaBtn');
+  btn.disabled = true;
+  try {
+    const texto = document.getElementById('mdiaTxt').value.trim();
+    await setMensajeDia(texto);
+    mensajeDia = { texto, por: ME.name };
+    closeSheet();
+    toast(texto ? 'Mensaje publicado para el equipo' : 'Mensaje quitado', 'ok');
+    vInicio();
+  } catch (err) { btn.disabled = false; toast('No se pudo guardar: ' + err.message, 'err'); }
+}
+
+// ══ Horarios del equipo: cualquier colaborador, semana por semana ══
+let horEmpSem = null;   // lunes de la semana visible en la vista de horario
+
+function tarjetaHorarios() {
+  return `
+    <div class="section-t">Horarios del equipo</div>
+    <div class="card row-link" style="padding:14px 15px" onclick="verHorariosEquipo()">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="kpi-ico ico-p" style="margin:0"><ion-icon name="grid-outline"></ion-icon></div>
+        <div style="flex:1;min-width:0">
+          <div class="row-t">Ver horario de cada colaborador</div>
+          <div class="row-s">Semana actual y las que vienen</div>
+        </div>
+        <ion-icon name="chevron-forward-outline" class="chev"></ion-icon>
+      </div>
+    </div>`;
+}
+
+function verHorariosEquipo() {
+  const lista = empsCache.filter(e => e.status === 'active' && e.store === tiendaActiva())
+    .sort((a,b) => a.name.localeCompare(b.name));
+  openSheet(`
+    <h3>Horarios · ${storeShort(tiendaActiva())}</h3>
+    <p class="lead">Toca a alguien para ver su semana y las próximas.</p>
+    ${lista.length ? `<div class="card">${lista.map(e => `
+      <div class="row row-link" onclick="verHorarioDe('${e.id}')">
+        ${avatar(e.name, 36)}
+        <div class="row-main"><div class="row-t">${esc(e.name)}</div>
+          <div class="row-s">${e.store==='1' ? (e.area==='envios'?'Envíos':'Tienda') : 'Cocina'}</div></div>
+        <ion-icon name="chevron-forward-outline" class="chev"></ion-icon>
+      </div>`).join('')}</div>`
+    : `<div class="empty"><ion-icon name="people-outline"></ion-icon><p>No hay colaboradores activos en esta tienda.</p></div>`}`);
+}
+
+async function verHorarioDe(empId, lunes) {
+  const emp = empsCache.find(e => e.id === empId);
+  if (!emp) return;
+  horEmpSem = lunes || lunesDe(new Date());
+  const dias = diasDeSemana(horEmpSem);
+  const shifts = await horarioDe(horEmpSem, emp.store).catch(() => ({}));
+  const mios = shifts[empId] || {};
+  const hoy = todayStr();
+  const esActual = horEmpSem === lunesDe(new Date());
+  const a = parseD(dias[0]), b = parseD(dias[6]);
+  const horasDe = t => {
+    if (!t) return 0;
+    const [h1,m1]=t.in.split(':').map(Number), [h2,m2]=t.out.split(':').map(Number);
+    return Math.max(0,(h2*60+m2-h1*60-m1)/60);
+  };
+  const total = dias.reduce((s,f) => s + horasDe(mios[f]), 0);
+
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <button class="btn btn-ghost btn-sm" onclick="verHorariosEquipo()" aria-label="Volver">
+        <ion-icon name="chevron-back-outline"></ion-icon></button>
+      ${avatar(emp.name, 34)}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700">${esc(emp.name)}</div>
+        <div style="font-size:12px;color:var(--muted)">${numES(total, 1)} h · ${a.getDate()} ${MCORTO[a.getMonth()]} – ${b.getDate()} ${MCORTO[b.getMonth()]}${esActual ? ' · actual' : ''}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="moverHorarioDe('${empId}',-1)" aria-label="Anterior">
+        <ion-icon name="chevron-back-outline"></ion-icon></button>
+      <button class="btn btn-ghost btn-sm" onclick="moverHorarioDe('${empId}',1)" aria-label="Siguiente">
+        <ion-icon name="chevron-forward-outline"></ion-icon></button>
+    </div>
+    <div class="card">
+      ${dias.map((f, i) => {
+        const t = mios[f];
+        const d = parseD(f);
+        return `<div class="hor-dia ${f === hoy ? 'hoy' : ''}">
+          <div class="hor-fecha"><div class="hor-nom">${DCORTO[(i + 1) % 7]}</div>
+            <div class="hor-num">${d.getDate()}</div></div>
+          <div class="hor-info">
+            ${t ? `<div class="hor-turno">${t.in} – ${t.out}</div>
+                   <div class="hor-sub">${numES(horasDe(t), 1)} h</div>`
+                : `<span class="hor-libre">Libre</span>`}
+          </div>
+          ${f === hoy ? '<span class="badge b-green">Hoy</span>' : ''}
+        </div>`;
+      }).join('')}
+    </div>`);
+}
+
+function moverHorarioDe(empId, n) {
+  const d = parseD(horEmpSem || lunesDe(new Date()));
+  d.setDate(d.getDate() + n * 7);
+  verHorarioDe(empId, toDateStr(d));
 }
 </script>
 </body>

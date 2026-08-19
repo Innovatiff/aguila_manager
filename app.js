@@ -197,6 +197,31 @@ function lunesDe(fecha) {
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return toDateStr(d);
 }
+function diasDeSemana(lunes) {
+  const out = [];
+  const d = parseD(lunes);
+  for (let i = 0; i < 7; i++) { out.push(toDateStr(d)); d.setDate(d.getDate() + 1); }
+  return out;
+}
+
+// La semana completa de una tienda, tal como la armó la gerencia
+async function horarioDe(lunes, store) {
+  const doc = await db.collection('Horarios').doc(`${lunes}_${store}`).get();
+  return doc.exists ? (doc.data().shifts || {}) : {};
+}
+
+// ── Mensaje del día (lo escribe la gerencia; lo ve todo el equipo) ──
+async function getMensajeDia() {
+  const doc = await db.collection('Config').doc('mensaje').get();
+  return doc.exists ? doc.data() : { texto: '' };
+}
+async function setMensajeDia(texto) {
+  await db.collection('Config').doc('mensaje').set({
+    texto: String(texto || '').trim(), por: ME.name,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
 async function quitarDelHorario(employeeId, desde, hasta) {
   const semanas = new Set();
   let d = parseD(desde);
