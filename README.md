@@ -1,4 +1,4 @@
-# El Águila — Gerencia (teléfono)
+# Águila — Gerencia (teléfono)
 
 La vista de bolsillo del software de gerencia. Misma base de datos, mismas
 reglas; pensada para el día a día desde el teléfono:

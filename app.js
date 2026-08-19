@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════
-//  El Águila — Gerencia en el teléfono
+//  Águila — Gerencia en el teléfono
 //
 //  La misma base de datos que el software de escritorio; esta app es la
 //  vista de bolsillo de la gerente: panel, chat, viajes, pedidos y
