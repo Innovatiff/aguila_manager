@@ -931,4 +931,12 @@ ion-icon {
 .hor-info { flex:1; min-width:0; }
 .hor-turno { font-size:14.5px; font-weight:700; font-variant-numeric:tabular-nums; }
 .hor-sub { font-size:11.5px; color:var(--muted); }
-.hor-libre { font-size:13px; color:var(--light); }
+/* Día libre en rojo: el SFM necesita ver de un vistazo quién descansa */
+.hor-libre {
+  display:inline-block; font-size:12px; font-weight:700;
+  padding:3px 10px; border-radius:999px;
+  background:var(--red-soft); color:#9f1239;
+  box-shadow:inset 0 0 0 1px #fecdd3;
+}
+/* Día que todavía no se asigna: no es descanso, falta ponerlo */
+.hor-pend { font-size:13px; color:var(--light); font-style:italic; }

@@ -1342,7 +1342,7 @@ async function verHorarioDe(empId, lunes) {
   const esActual = horEmpSem === lunesDe(new Date());
   const a = parseD(dias[0]), b = parseD(dias[6]);
   const horasDe = t => {
-    if (!t) return 0;
+    if (!t || esLibre(t)) return 0;
     const [h1,m1]=t.in.split(':').map(Number), [h2,m2]=t.out.split(':').map(Number);
     return Math.max(0,(h2*60+m2-h1*60-m1)/60);
   };
@@ -1370,9 +1370,10 @@ async function verHorarioDe(empId, lunes) {
           <div class="hor-fecha"><div class="hor-nom">${DCORTO[(i + 1) % 7]}</div>
             <div class="hor-num">${d.getDate()}</div></div>
           <div class="hor-info">
-            ${t ? `<div class="hor-turno">${t.in} – ${t.out}</div>
+            ${esLibre(t) ? `<span class="hor-libre">Libre</span>`
+                : t ? `<div class="hor-turno">${t.in} – ${t.out}</div>
                    <div class="hor-sub">${numES(horasDe(t), 1)} h</div>`
-                : `<span class="hor-libre">Libre</span>`}
+                : `<span class="hor-pend">Pendiente por registrar</span>`}
           </div>
           ${f === hoy ? '<span class="badge b-green">Hoy</span>' : ''}
         </div>`;

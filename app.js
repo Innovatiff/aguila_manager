@@ -204,11 +204,16 @@ function diasDeSemana(lunes) {
   return out;
 }
 
-// La semana completa de una tienda, tal como la armó la gerencia
+// La semana completa de una tienda, tal como la armó el SFM
 async function horarioDe(lunes, store) {
   const doc = await db.collection('Horarios').doc(`${lunes}_${store}`).get();
   return doc.exists ? (doc.data().shifts || {}) : {};
 }
+
+/* Un día de descanso se guarda como { libre:true }, sin hora de entrada ni
+   de salida. Hay que preguntarlo ANTES de leer t.in: el objeto existe y es
+   "truthy", pero no trae horas, y leerlas tumba la vista completa. */
+function esLibre(t) { return !!(t && t.libre); }
 
 // ── Mensaje del día (lo escribe la gerencia; lo ve todo el equipo) ──
 async function getMensajeDia() {
