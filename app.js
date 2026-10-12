@@ -181,9 +181,19 @@ async function getClockInsHoy() {
 
 // ── Permisos ──
 async function getTimeOff() {
-  const snap = await db.collection('TimeOff').get();
-  return snap.docs.map(d => ({ id:d.id, ...d.data() }))
-    .sort((a,b) => String(b.startDate||'').localeCompare(String(a.startDate||'')));
+  // Las solicitudes viejas del portal venían sin nombre: se completa aquí
+  // buscando al colaborador por su id, sin tocar el documento guardado.
+  const [snap, emps] = await Promise.all([
+    db.collection('TimeOff').get(), getEmployees()
+  ]);
+  return snap.docs.map(d => {
+    const t = { id:d.id, ...d.data() };
+    if (!t.employeeName) {
+      const e = emps.find(x => x.id === t.employeeId);
+      if (e) t.employeeName = e.name;
+    }
+    return t;
+  }).sort((a,b) => String(b.startDate||'').localeCompare(String(a.startDate||'')));
 }
 async function updateTimeOff(id, data) { await db.collection('TimeOff').doc(id).update(data); }
 
