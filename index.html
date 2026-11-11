@@ -1018,13 +1018,17 @@ const PED_EST = {
 async function vPedidos() {
   loading(3);
   try {
-    const peds = await getPedidos(tiendaActiva());
+    const todos = await getPedidos(tiendaActiva());
+    const peds = todos.filter(p => p.tipo !== 'persona');
+    const entre = todos.filter(p => p.tipo === 'persona');
     const fila = p => {
-      const est = PED_EST[p.status||'borrador'] || PED_EST.borrador;
+      const est = p.tipo === 'persona'
+        ? (p.status === 'aceptado' ? { label:'Aceptado', badge:'b-green' } : { label:'Por aceptar', badge:'b-amber' })
+        : (PED_EST[p.status||'borrador'] || PED_EST.borrador);
       return `<div class="row row-link" onclick='verPedido(${JSON.stringify(JSON.stringify(p))})'>
         <div class="row-main">
           <div class="row-t">${esc(p.title || 'Pedido')}</div>
-          <div class="row-s">${fDateShort(p.date)} · ${esc(p.createdByName || '—')} · ${(p.items||[]).length} artículos</div>
+          <div class="row-s">${fDateShort(p.date)} · ${esc(p.createdByName || '—')}${p.tipo === 'persona' ? ' → ' + esc(p.paraName || '—') : ''} · ${(p.items||[]).length} artículos</div>
         </div>
         <span class="badge ${est.badge}">${est.label}</span>
       </div>`;
@@ -1034,7 +1038,9 @@ async function vPedidos() {
       ${peds.length
         ? `<div class="card">${peds.map(fila).join('')}</div>`
         : `<div class="card"><div class="empty"><ion-icon name="clipboard-outline"></ion-icon>
-             <p>No hay pedidos en ${storeShort(tiendaActiva())}.</p></div></div>`}`;
+             <p>No hay pedidos en ${storeShort(tiendaActiva())}.</p></div></div>`}
+      ${entre.length ? `<div class="sec-t" style="margin:18px 4px 8px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)">Entre colaboradores</div>
+        <div class="card">${entre.map(fila).join('')}</div>` : ''}`;
   } catch (err) { errView(err); }
 }
 
@@ -1044,7 +1050,7 @@ function verPedido(json) {
   const est = p.status || 'borrador';
   openSheet(`
     <h3>${esc(p.title || 'Pedido')}</h3>
-    <p class="lead">${fDate(p.date)} · ${esc(p.createdByName || '—')}</p>
+    <p class="lead">${fDate(p.date)} · ${esc(p.createdByName || '—')}${p.tipo === 'persona' ? ' → ' + esc(p.paraName || '—') : ''}</p>
     <div class="card" style="margin-bottom:12px;max-height:40vh;overflow-y:auto">
       ${items.length ? items.map((it,i) => `
         <div class="row">
@@ -1055,11 +1061,13 @@ function verPedido(json) {
       : '<div class="empty"><p>Sin artículos.</p></div>'}
     </div>
     ${p.note ? `<p class="lead" style="margin-bottom:12px"><strong>Nota:</strong> ${esc(p.note)}</p>` : ''}
-    <div class="lbl">Estado</div>
+    ${p.tipo === 'persona'
+      ? `<p class="lead" style="text-align:center">${est === 'aceptado' ? '✅ Aceptado por ' + esc(p.paraName || '') : '⏳ Esperando que ' + esc(p.paraName || '') + ' lo acepte'}</p>`
+      : `<div class="lbl">Estado</div>
     <div class="est-btns">
       ${Object.keys(PED_EST).map(k => `
         <button class="est-btn ${est===k?'on':''}" onclick='cambiarEstado("${p.id}","${k}")'>${PED_EST[k].label}</button>`).join('')}
-    </div>
+    </div>`}
     <button class="btn btn-ghost btn-block" style="margin-top:12px" onclick="closeSheet()">Cerrar</button>`);
 }
 
